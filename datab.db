@@ -1,0 +1,490 @@
+-- Chess Learning Coach - PostgreSQL Database Schema
+-- Run this to set up your database structure
+
+-- Create database
+CREATE DATABASE chess_coach;
+
+\c chess_coach;
+
+-- Users table - stores player information
+CREATE TABLE users (
+    id SERIAL PRIMARY KEY,
+    username VARCHAR(50) UNIQUE NOT NULL,
+    email VARCHAR(100) UNIQUE NOT NULL,
+    password_hash VARCHAR(255),
+    rating INTEGER DEFAULT 1200,
+    games_played INTEGER DEFAULT 0,
+    wins INTEGER DEFAULT 0,
+    losses INTEGER DEFAULT 0,
+    draws INTEGER DEFAULT 0,
+    highest_rating INTEGER DEFAULT 1200,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_login TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Games table - stores complete game records
+CREATE TABLE games (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    white_player_id INTEGER REFERENCES users(id),
+    black_player_id INTEGER REFERENCES users(id),
+    opponent_type VARCHAR(20) CHECK (opponent_type IN ('ai', 'human', 'online')),
+    result VARCHAR(20) CHECK (result IN ('white_win', 'black_win', 'draw', 'timeout', 'resignation')),
+    pgn_notation TEXT NOT NULL,
+    fen_start VARCHAR(100) DEFAULT 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
+    fen_final VARCHAR(100),
+    moves_count INTEGER,
+    game_duration INTEGER, -- in seconds
+    time_control VARCHAR(20), -- e.g., '10+0', '5+3'
+    opening_name VARCHAR(100),
+    opening_eco VARCHAR(10), -- ECO code (e.g., 'B90' for Sicilian Najdorf)
+    accuracy_white FLOAT,
+    accuracy_black FLOAT,
+    avg_centipawn_loss_white FLOAT,
+    avg_centipawn_loss_black FLOAT,
+    brilliant_moves INTEGER DEFAULT 0,
+    blunders INTEGER DEFAULT 0,
+    mistakes INTEGER DEFAULT 0,
+    inaccuracies INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    analyzed BOOLEAN DEFAULT FALSE,
+    analysis_depth INTEGER DEFAULT 15
+);
+
+-- Move Analysis table - detailed move-by-move analysis
+CREATE TABLE move_analysis (
+    id SERIAL PRIMARY KEY,
+    game_id INTEGER REFERENCES games(id) ON DELETE CASCADE,
+    move_number INTEGER NOT NULL,
+    move_notation VARCHAR(10) NOT NULL, -- e.g., 'e2e4'
+    san_notation VARCHAR(10), -- Standard Algebraic Notation e.g., 'Nf3'
+    player_color VARCHAR(5) CHECK (player_color IN ('white', 'black')),
+    fen_before VARCHAR(100) NOT NULL,
+    fen_after VARCHAR(100) NOT NULL,
+    evaluation_before FLOAT, -- in pawns
+    evaluation_after FLOAT,
+    best_move VARCHAR(10),
+    best_move_san VARCHAR(10),
+    classification VARCHAR(20) CHECK (classification IN ('brilliant', 'best', 'good', 'inaccuracy', 'mistake', 'blunder')),
+    centipawn_loss INTEGER,
+    time_spent INTEGER, -- seconds spent on this move
+    tactical_theme VARCHAR(50), -- e.g., 'fork', 'pin', 'skewer', 'discovery'
+    positional_theme VARCHAR(50), -- e.g., 'center_control', 'king_safety', 'weak_square'
+    is_capture BOOLEAN DEFAULT FALSE,
+    is_check BOOLEAN DEFAULT FALSE,
+    is_checkmate BOOLEAN DEFAULT FALSE,
+    is_castling BOOLEAN DEFAULT FALSE,
+    piece_type VARCHAR(10), -- pawn, knight, bishop, rook, queen, king
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- User Statistics table - aggregated performance metrics
+CREATE TABLE user_statistics (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE UNIQUE,
+    
+    -- Performance metrics (0-100 scale)
+    tactical_accuracy FLOAT DEFAULT 0,
+    positional_awareness FLOAT DEFAULT 0,
+    endgame_skill FLOAT DEFAULT 0,
+    opening_knowledge FLOAT DEFAULT 0,
+    time_management FLOAT DEFAULT 0,
+    
+    -- Detailed stats
+    avg_centipawn_loss FLOAT DEFAULT 0,
+    avg_move_time FLOAT DEFAULT 0,
+    avg_game_length INTEGER DEFAULT 0,
+    
+    -- Phase-specific accuracy
+    opening_accuracy FLOAT DEFAULT 0,
+    middlegame_accuracy FLOAT DEFAULT 0,
+    endgame_accuracy FLOAT DEFAULT 0,
+    
+    -- Opening repertoire
+    most_played_opening_white VARCHAR(100),
+    most_played_opening_black VARCHAR(100),
+    
+    -- Strengths and weaknesses
+    weakest_phase VARCHAR(20) CHECK (weakest_phase IN ('opening', 'middlegame', 'endgame')),
+    strongest_phase VARCHAR(20) CHECK (strongest_phase IN ('opening', 'middlegame', 'endgame')),
+    
+    -- Tactical patterns
+    fork_success_rate FLOAT DEFAULT 0,
+    pin_success_rate FLOAT DEFAULT 0,
+    discovered_attack_rate FLOAT DEFAULT 0,
+    
+    -- Time management
+    time_pressure_blunders INTEGER DEFAULT 0,
+    avg_time_per_move FLOAT DEFAULT 0,
+    
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Weaknesses table - tracks recurring problems
+CREATE TABLE weaknesses (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    weakness_type VARCHAR(50) NOT NULL,
+    category VARCHAR(20) CHECK (category IN ('tactical', 'positional', 'opening', 'endgame', 'time')),
+    description TEXT,
+    severity VARCHAR(20) CHECK (severity IN ('low', 'medium', 'high', 'critical')),
+    occurrence_count INTEGER DEFAULT 1,
+    first_detected TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_occurred TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    resolved BOOLEAN DEFAULT FALSE,
+    resolved_at TIMESTAMP
+);
+
+-- Strengths table - tracks consistent good performance
+CREATE TABLE strengths (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    strength_type VARCHAR(50) NOT NULL,
+    category VARCHAR(20) CHECK (category IN ('tactical', 'positional', 'opening', 'endgame', 'time')),
+    description TEXT,
+    confidence_score FLOAT DEFAULT 0, -- 0-100
+    evidence_count INTEGER DEFAULT 1,
+    first_detected TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_demonstrated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Training Recommendations table - personalized learning suggestions
+CREATE TABLE recommendations (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    recommendation_type VARCHAR(50) NOT NULL,
+    category VARCHAR(20) CHECK (category IN ('tactical', 'positional', 'opening', 'endgame', 'strategy')),
+    title VARCHAR(200) NOT NULL,
+    description TEXT,
+    priority VARCHAR(20) CHECK (priority IN ('low', 'medium', 'high', 'urgent')),
+    resource_type VARCHAR(30) CHECK (resource_type IN ('puzzle', 'video', 'article', 'practice', 'analysis')),
+    resource_url TEXT,
+    estimated_time INTEGER, -- minutes
+    difficulty VARCHAR(20) CHECK (difficulty IN ('beginner', 'intermediate', 'advanced', 'master')),
+    completed BOOLEAN DEFAULT FALSE,
+    completed_at TIMESTAMP,
+    effectiveness_rating INTEGER, -- 1-5 stars
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Puzzle History table - tracks tactical puzzle practice
+CREATE TABLE puzzle_history (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    puzzle_id VARCHAR(50) NOT NULL,
+    puzzle_fen VARCHAR(100) NOT NULL,
+    puzzle_theme VARCHAR(50), -- fork, pin, mate_in_2, etc.
+    difficulty_rating INTEGER, -- 800-2800
+    solved BOOLEAN DEFAULT FALSE,
+    attempts INTEGER DEFAULT 1,
+    time_spent INTEGER, -- seconds
+    solution_moves TEXT,
+    user_moves TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Opening Repertoire table - tracks opening lines
+CREATE TABLE opening_repertoire (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    color VARCHAR(5) CHECK (color IN ('white', 'black')),
+    opening_name VARCHAR(100) NOT NULL,
+    eco_code VARCHAR(10),
+    moves_sequence TEXT, -- space-separated SAN moves
+    games_played INTEGER DEFAULT 0,
+    win_rate FLOAT DEFAULT 0,
+    avg_centipawn_loss FLOAT DEFAULT 0,
+    last_played TIMESTAMP,
+    confidence_level VARCHAR(20) CHECK (confidence_level IN ('learning', 'comfortable', 'mastered')),
+    notes TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Learning Progress table - tracks skill development over time
+CREATE TABLE learning_progress (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    metric_name VARCHAR(50) NOT NULL,
+    metric_value FLOAT NOT NULL,
+    rating_at_time INTEGER,
+    games_played_at_time INTEGER,
+    recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Session table - tracks individual practice/game sessions
+CREATE TABLE sessions (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    session_type VARCHAR(20) CHECK (session_type IN ('game', 'puzzle', 'analysis', 'study')),
+    start_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    end_time TIMESTAMP,
+    duration INTEGER, -- minutes
+    games_played INTEGER DEFAULT 0,
+    puzzles_solved INTEGER DEFAULT 0,
+    accuracy FLOAT,
+    focus_area VARCHAR(50),
+    notes TEXT
+);
+
+-- Indexes for performance optimization
+CREATE INDEX idx_games_user_id ON games(user_id);
+CREATE INDEX idx_games_created_at ON games(created_at);
+CREATE INDEX idx_move_analysis_game_id ON move_analysis(game_id);
+CREATE INDEX idx_move_analysis_classification ON move_analysis(classification);
+CREATE INDEX idx_weaknesses_user_id ON weaknesses(user_id);
+CREATE INDEX idx_recommendations_user_id ON recommendations(user_id);
+CREATE INDEX idx_recommendations_priority ON recommendations(priority);
+CREATE INDEX idx_puzzle_history_user_id ON puzzle_history(user_id);
+CREATE INDEX idx_opening_repertoire_user_id ON opening_repertoire(user_id);
+CREATE INDEX idx_learning_progress_user_id ON learning_progress(user_id);
+
+-- Views for easy data access
+
+-- User performance summary view
+CREATE VIEW user_performance_summary AS
+SELECT 
+    u.id,
+    u.username,
+    u.rating,
+    u.games_played,
+    u.wins,
+    u.losses,
+    u.draws,
+    ROUND(CAST(u.wins AS FLOAT) / NULLIF(u.games_played, 0) * 100, 1) as win_rate,
+    us.tactical_accuracy,
+    us.positional_awareness,
+    us.opening_knowledge,
+    us.endgame_skill,
+    us.avg_centipawn_loss,
+    us.weakest_phase,
+    us.strongest_phase
+FROM users u
+LEFT JOIN user_statistics us ON u.id = us.user_id;
+
+-- Recent games with analysis summary
+CREATE VIEW recent_games_analysis AS
+SELECT 
+    g.id,
+    g.user_id,
+    u.username,
+    g.result,
+    g.moves_count,
+    g.accuracy_white,
+    g.accuracy_black,
+    g.brilliant_moves,
+    g.blunders,
+    g.mistakes,
+    g.opening_name,
+    g.created_at,
+    COUNT(ma.id) as analyzed_moves
+FROM games g
+JOIN users u ON g.user_id = u.id
+LEFT JOIN move_analysis ma ON g.id = ma.game_id
+GROUP BY g.id, u.username
+ORDER BY g.created_at DESC;
+
+-- Active weaknesses view
+CREATE VIEW active_weaknesses AS
+SELECT 
+    w.id,
+    w.user_id,
+    u.username,
+    w.weakness_type,
+    w.category,
+    w.description,
+    w.severity,
+    w.occurrence_count,
+    w.last_occurred,
+    DATE_PART('day', NOW() - w.last_occurred) as days_since_last
+FROM weaknesses w
+JOIN users u ON w.user_id = u.id
+WHERE w.resolved = FALSE
+ORDER BY w.severity DESC, w.occurrence_count DESC;
+
+-- Pending recommendations view
+CREATE VIEW pending_recommendations AS
+SELECT 
+    r.id,
+    r.user_id,
+    u.username,
+    r.title,
+    r.description,
+    r.priority,
+    r.category,
+    r.estimated_time,
+    r.created_at
+FROM recommendations r
+JOIN users u ON r.user_id = u.id
+WHERE r.completed = FALSE
+ORDER BY 
+    CASE r.priority
+        WHEN 'urgent' THEN 1
+        WHEN 'high' THEN 2
+        WHEN 'medium' THEN 3
+        WHEN 'low' THEN 4
+    END,
+    r.created_at DESC;
+
+-- Functions for automated analysis
+
+-- Function to calculate user accuracy
+CREATE OR REPLACE FUNCTION calculate_user_accuracy(p_user_id INTEGER)
+RETURNS FLOAT AS $
+DECLARE
+    total_moves INTEGER;
+    good_moves INTEGER;
+BEGIN
+    SELECT COUNT(*) INTO total_moves
+    FROM move_analysis ma
+    JOIN games g ON ma.game_id = g.id
+    WHERE g.user_id = p_user_id;
+    
+    IF total_moves = 0 THEN
+        RETURN 0;
+    END IF;
+    
+    SELECT COUNT(*) INTO good_moves
+    FROM move_analysis ma
+    JOIN games g ON ma.game_id = g.id
+    WHERE g.user_id = p_user_id
+    AND ma.classification IN ('brilliant', 'best', 'good');
+    
+    RETURN ROUND(CAST(good_moves AS FLOAT) / total_moves * 100, 1);
+END;
+$ LANGUAGE plpgsql;
+
+-- Function to update user statistics after each game
+CREATE OR REPLACE FUNCTION update_user_statistics_after_game()
+RETURNS TRIGGER AS $
+BEGIN
+    -- Update user record
+    UPDATE users SET 
+        games_played = games_played + 1,
+        wins = CASE 
+            WHEN NEW.result = 'white_win' AND NEW.white_player_id = NEW.user_id THEN wins + 1
+            WHEN NEW.result = 'black_win' AND NEW.black_player_id = NEW.user_id THEN wins + 1
+            ELSE wins
+        END,
+        losses = CASE 
+            WHEN NEW.result = 'white_win' AND NEW.black_player_id = NEW.user_id THEN losses + 1
+            WHEN NEW.result = 'black_win' AND NEW.white_player_id = NEW.user_id THEN losses + 1
+            ELSE losses
+        END,
+        draws = CASE WHEN NEW.result = 'draw' THEN draws + 1 ELSE draws END
+    WHERE id = NEW.user_id;
+    
+    RETURN NEW;
+END;
+$ LANGUAGE plpgsql;
+
+-- Trigger to update statistics
+CREATE TRIGGER game_completed_trigger
+AFTER INSERT ON games
+FOR EACH ROW
+EXECUTE FUNCTION update_user_statistics_after_game();
+
+-- Function to detect weakness patterns
+CREATE OR REPLACE FUNCTION detect_weakness_patterns(p_user_id INTEGER)
+RETURNS TABLE(weakness_type VARCHAR, severity VARCHAR, description TEXT) AS $
+BEGIN
+    -- Detect tactical blunders
+    IF (SELECT COUNT(*) FROM move_analysis ma
+        JOIN games g ON ma.game_id = g.id
+        WHERE g.user_id = p_user_id 
+        AND ma.classification = 'blunder'
+        AND g.created_at > NOW() - INTERVAL '7 days') > 5 THEN
+        
+        RETURN QUERY SELECT 
+            'tactical_awareness'::VARCHAR,
+            'high'::VARCHAR,
+            'Frequent tactical oversights detected in recent games'::TEXT;
+    END IF;
+    
+    -- Detect opening phase weakness
+    IF (SELECT COUNT(*) FROM move_analysis ma
+        JOIN games g ON ma.game_id = g.id
+        WHERE g.user_id = p_user_id 
+        AND ma.move_number <= 10
+        AND ma.classification IN ('mistake', 'blunder')
+        AND g.created_at > NOW() - INTERVAL '7 days') > 8 THEN
+        
+        RETURN QUERY SELECT 
+            'opening_preparation'::VARCHAR,
+            'medium'::VARCHAR,
+            'Consistent mistakes in opening phase'::TEXT;
+    END IF;
+    
+    -- Detect endgame weakness
+    IF (SELECT COUNT(*) FROM move_analysis ma
+        JOIN games g ON ma.game_id = g.id
+        WHERE g.user_id = p_user_id 
+        AND ma.move_number > 30
+        AND ma.classification IN ('mistake', 'blunder')
+        AND g.created_at > NOW() - INTERVAL '7 days') > 6 THEN
+        
+        RETURN QUERY SELECT 
+            'endgame_technique'::VARCHAR,
+            'medium'::VARCHAR,
+            'Difficulty converting winning endgame positions'::TEXT;
+    END IF;
+    
+    RETURN;
+END;
+$ LANGUAGE plpgsql;
+
+-- Sample data for testing
+INSERT INTO users (username, email, rating) VALUES 
+('ChessMaster', 'master@chess.com', 1500),
+('TacticNinja', 'ninja@chess.com', 1300),
+('PositionalPlayer', 'positional@chess.com', 1400);
+
+-- Initialize statistics for sample users
+INSERT INTO user_statistics (user_id) 
+SELECT id FROM users;
+
+-- Sample recommendation templates
+INSERT INTO recommendations (user_id, recommendation_type, category, title, description, priority, resource_type, estimated_time, difficulty)
+SELECT 
+    1,
+    'tactical_training',
+    'tactical',
+    'Master Knight Forks',
+    'Practice 20 knight fork puzzles to improve tactical vision',
+    'high',
+    'puzzle',
+    30,
+    'intermediate';
+
+-- Utility queries for common operations
+
+-- Get user's recent performance trend
+COMMENT ON TABLE learning_progress IS 'Query example: 
+SELECT metric_name, metric_value, recorded_at 
+FROM learning_progress 
+WHERE user_id = 1 
+AND recorded_at > NOW() - INTERVAL ''30 days''
+ORDER BY recorded_at;';
+
+-- Get most common mistakes by opening
+COMMENT ON TABLE move_analysis IS 'Query example:
+SELECT g.opening_name, ma.classification, COUNT(*) as count
+FROM move_analysis ma
+JOIN games g ON ma.game_id = g.id
+WHERE g.user_id = 1 AND ma.move_number <= 15
+GROUP BY g.opening_name, ma.classification
+ORDER BY count DESC;';
+
+-- Get improvement suggestions based on recent games
+COMMENT ON TABLE weaknesses IS 'Query example:
+SELECT w.weakness_type, w.severity, COUNT(*) as frequency
+FROM weaknesses w
+WHERE w.user_id = 1 
+AND w.last_occurred > NOW() - INTERVAL ''14 days''
+GROUP BY w.weakness_type, w.severity
+ORDER BY frequency DESC;';
+
+-- Grant permissions (adjust as needed)
+-- GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO chess_app_user;
+-- GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO chess_app_user;
+-- GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO chess_app_user;
